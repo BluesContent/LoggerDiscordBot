@@ -1,0 +1,11 @@
+.env
+credentials/
+state.json
+projects.json
+messages/
+__pycache__/
+*.pyc
+.venv/
+venv/
+.DS_Store
+.claude/

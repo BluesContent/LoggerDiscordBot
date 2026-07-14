@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Painel Multicorder</title>
+<style>
+  :root{
+    --bg:#0f1117; --card:#1a1d27; --card2:#232735; --line:#2e3446;
+    --txt:#e6e8ee; --mut:#9aa3b8; --accent:#5865F2; --ok:#3ba55d; --warn:#faa61a; --err:#ed4245;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--txt);font-size:14px}
+  a{color:var(--accent)}
+  header{display:flex;align-items:center;gap:16px;padding:14px 22px;background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+  header h1{font-size:17px;margin:0;font-weight:650}
+  header .logo{font-size:22px}
+  .spacer{flex:1}
+  .status-pill{display:flex;align-items:center;gap:8px;background:var(--card2);padding:6px 12px;border-radius:20px;font-size:13px}
+  .dot{width:9px;height:9px;border-radius:50%;background:var(--err)}
+  .dot.on{background:var(--ok);box-shadow:0 0 8px var(--ok)}
+  button{font-family:inherit;font-size:13px;border:none;border-radius:7px;padding:8px 13px;cursor:pointer;background:var(--card2);color:var(--txt);transition:.15s}
+  button:hover{filter:brightness(1.15)}
+  button.primary{background:var(--accent);color:#fff}
+  button.ok{background:var(--ok);color:#fff}
+  button.danger{background:var(--err);color:#fff}
+  button.ghost{background:transparent;border:1px solid var(--line)}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  .tabs{display:flex;gap:4px;padding:14px 22px 0}
+  .tab{padding:9px 16px;border-radius:8px 8px 0 0;background:transparent;color:var(--mut);cursor:pointer}
+  .tab.active{background:var(--card);color:var(--txt)}
+  main{padding:20px 22px;max-width:920px;margin:0 auto}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:16px}
+  .card h3{margin:0 0 4px;font-size:15px}
+  .row{display:flex;gap:12px;flex-wrap:wrap;margin-top:12px}
+  .field{display:flex;flex-direction:column;gap:5px;flex:1;min-width:180px}
+  label{font-size:12px;color:var(--mut);font-weight:600}
+  input,select,textarea{background:var(--bg);border:1px solid var(--line);color:var(--txt);border-radius:7px;padding:9px 11px;font-family:inherit;font-size:13px;width:100%}
+  .idx{display:flex;gap:6px;flex-wrap:wrap}
+  .idx label{display:flex;align-items:center;gap:5px;background:var(--card2);padding:6px 10px;border-radius:6px;cursor:pointer;color:var(--txt)}
+  .days{display:flex;gap:5px;flex-wrap:wrap}
+  .days label{display:flex;align-items:center;gap:5px;background:var(--card2);padding:6px 9px;border-radius:6px;cursor:pointer;color:var(--txt);font-size:12px}
+  .actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;border-top:1px solid var(--line);padding-top:14px}
+  .muted{color:var(--mut);font-size:12.5px}
+  .copyrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:5px}
+  .copyrow code{background:var(--card2);padding:4px 9px;border-radius:5px;font-size:11.5px;color:#b8c0ff;word-break:break-all}
+
+  /* editor visual */
+  .toolbar{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:6px}
+  .tb{background:var(--card2);border:1px solid var(--line);padding:5px 9px;border-radius:6px;font-size:12px;cursor:pointer;color:var(--txt)}
+  .tb:hover{border-color:var(--accent)}
+  .tbsep{width:1px;height:18px;background:var(--line);margin:0 2px}
+  .editor{background:var(--bg);border:1px solid var(--line);color:var(--txt);border-radius:7px;padding:10px 12px;min-height:120px;font-size:13.5px;line-height:1.9;outline:none;white-space:pre-wrap}
+  .editor:focus{border-color:var(--accent)}
+  .editor:empty:before{content:attr(data-ph);color:var(--mut)}
+  .pill{display:inline-block;padding:1px 9px;border-radius:12px;font-size:12px;margin:0 1px;user-select:none;vertical-align:baseline}
+  .pill.fieldp{background:rgba(88,101,242,.22);color:#b8c0ff;border:1px solid rgba(88,101,242,.45)}
+  .pill.ment{background:rgba(59,165,93,.22);color:#8fe6ad;border:1px solid rgba(59,165,93,.45)}
+
+  /* cards-resumo (tela inicial) — tiles verticais lado a lado */
+  #projects.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:20px;align-items:stretch}
+  .scard{display:flex;flex-direction:column;gap:8px;min-height:224px;background:var(--card);border:1px solid var(--line);border-radius:13px;padding:22px;cursor:pointer;transition:.15s}
+  .scard:hover{border-color:var(--accent);transform:translateY(-2px)}
+  .scard-top{display:flex;align-items:flex-start;gap:11px}
+  .scard-name{font-size:21px;font-weight:650;line-height:1.25;flex:1}
+  .scard-meta{color:var(--mut);font-size:17px;line-height:1.4}
+  .scard-folders{display:flex;flex-direction:column;gap:4px;margin-top:11px;padding-top:11px;border-top:1px solid var(--line)}
+  .ffrow{font-size:16px;line-height:1.35;color:var(--txt);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ffrow.wait{color:#f6c25a}
+  .ffrow.ok{color:#8fe6ad}
+  .ffrow.sent{color:#98a2ff}
+  .fmiss{color:var(--mut)}
+  .scard-foot{margin-top:auto;padding-top:10px}
+  .scard-badge{display:inline-block;font-size:15px;font-weight:600;padding:4px 14px;border-radius:15px;background:var(--card2);color:var(--mut)}
+  .scard-badge.ok{background:rgba(59,165,93,.2);color:#5cd682}
+  .scard-badge.off{background:rgba(154,163,184,.15);color:var(--mut)}
+  .scard-badge.warn{background:rgba(250,166,26,.18);color:#f6c25a}
+
+  .chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+  .chip{background:var(--card2);border:1px solid var(--line);padding:5px 9px;border-radius:14px;font-size:12px;cursor:pointer}
+  .chip:hover{border-color:var(--accent)}
+  .statusbox{margin-top:12px;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;font-size:12.5px}
+  .frow{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--line)}
+  .frow:last-child{border:none}
+  .badge{padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}
+  .b-ok{background:rgba(59,165,93,.2);color:#5cd682}
+  .b-wait{background:rgba(250,166,26,.18);color:#f6c25a}
+  .b-sent{background:rgba(88,101,242,.2);color:#98a2ff}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th,td{text-align:left;padding:8px;border-bottom:1px solid var(--line)}
+  th{color:var(--mut);font-weight:600}
+  .toast{position:fixed;bottom:20px;right:20px;background:var(--card2);border:1px solid var(--line);border-left:3px solid var(--accent);padding:12px 16px;border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,.4);opacity:0;transform:translateY(10px);transition:.25s;max-width:320px;z-index:50}
+  .toast.show{opacity:1;transform:none}
+  .toast.err{border-left-color:var(--err)}
+  .toast.ok{border-left-color:var(--ok)}
+  .hidden{display:none}
+  .hint{background:var(--card2);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--mut);margin-top:10px}
+  .time{max-width:120px;text-align:center;letter-spacing:1px;font-variant-numeric:tabular-nums}
+  code{background:var(--card2);padding:1px 5px;border-radius:4px;font-size:12px}
+</style>
+</head>
+<body>
+<header>
+  <span class="logo">🎬</span>
+  <h1>Painel Multicorder</h1>
+  <div class="spacer"></div>
+  <div class="status-pill"><span id="botDot" class="dot"></span><span id="botLabel">Parado</span></div>
+  <button id="btnToggle" class="primary">Ligar monitoramento</button>
+</header>
+
+<div class="tabs">
+  <div class="tab active" data-tab="projetos">Projetos</div>
+  <div class="tab" data-tab="config">Configurações</div>
+  <div class="tab" data-tab="historico">Histórico</div>
+</div>
+
+<main>
+  <section id="tab-projetos">
+    <button class="ghost" id="btnAdd" style="margin-bottom:16px">➕ Novo projeto</button>
+    <div id="projects"></div>
+  </section>
+
+  <section id="tab-config" class="hidden">
+    <div class="card">
+      <h3>Configurações gerais</h3>
+      <div class="row">
+        <div class="field">
+          <label>Token do bot do Discord</label>
+          <input id="cfgToken" type="password" placeholder="deixe em branco para manter o atual">
+          <span class="muted" id="cfgTokenState"></span>
+        </div>
+      </div>
+      <div class="row">
+        <div class="field"><label>Intervalo de checagem (segundos)</label><input id="cfgPoll" type="number" min="30"></div>
+        <div class="field"><label>Fuso horário</label><input id="cfgTz"></div>
+        <div class="field"><label>Formato da data das pastas</label><input id="cfgDate"></div>
+      </div>
+      <div class="hint" id="cfgCreds"></div>
+      <div class="actions"><button class="primary" id="btnSaveCfg">Salvar configurações</button></div>
+    </div>
+    <div class="hint">💡 <b>Trocar o token:</b> se resetou o token no Discord, cole o novo aqui e salve.</div>
+  </section>
+
+  <section id="tab-historico" class="hidden">
+    <div class="card">
+      <h3>Avisos já enviados</h3>
+      <p class="muted">Cada pasta é avisada uma vez. Use "Reenviar" para permitir novo aviso.</p>
+      <table><thead><tr><th>Quando</th><th>Projeto</th><th>Pasta</th><th></th></tr></thead>
+      <tbody id="histBody"></tbody></table>
+    </div>
+  </section>
+</main>
+
+<div id="toast" class="toast"></div>
+
+<script>
+const DAYS = [["seg","Seg"],["ter","Ter"],["qua","Qua"],["qui","Qui"],["sex","Sex"],["sab","Sáb"],["dom","Dom"]];
+const FIELDS = [
+  {token:"{path}",  label:"📁 pasta"},
+  {token:"{video}", label:"🎬 nome do vídeo"},
+  {token:"{date}",  label:"📅 data"},
+  {token:"{link}",  label:"🔗 link"},
+  {token:"{project}",label:"🏷️ projeto"},
+];
+let PROJECTS = [], GUILDS = [], CFG = {}, BOT_EMAIL = '';
+
+const $ = s => document.querySelector(s);
+const api = async (url, opts) => {
+  const r = await fetch(url, opts);
+  const j = await r.json().catch(()=>({}));
+  if(!r.ok) throw new Error(j.error || ('Erro '+r.status));
+  return j;
+};
+function toast(msg, type=''){ const t=$('#toast'); t.textContent=msg; t.className='toast show '+type; setTimeout(()=>t.className='toast',3000); }
+async function copyText(t){ try{ await navigator.clipboard.writeText(t); }catch(e){ const ta=document.createElement('textarea'); ta.value=t; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); } toast('E-mail copiado ✅','ok'); }
+function escHtml(s){ return String(s??'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+function escAttr(s){ return String(s??'').replace(/"/g,'&quot;'); }
+
+// ---------- Tabs ----------
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+  t.classList.add('active');
+  ['projetos','config','historico'].forEach(n=>$('#tab-'+n).classList.toggle('hidden', n!==t.dataset.tab));
+  if(t.dataset.tab==='historico') loadHistory();
+});
+
+// ---------- Runner ----------
+async function refreshRunner(){
+  const s = await api('/api/runner');
+  $('#botDot').className = 'dot'+(s.running?' on':'');
+  $('#botLabel').textContent = s.running ? ('Monitorando'+(s.last_run?' · última: '+s.last_run.split(' ')[1]:'')) : 'Parado';
+  $('#btnToggle').textContent = s.running ? 'Desligar monitoramento' : 'Ligar monitoramento';
+  $('#btnToggle').className = s.running ? 'danger' : 'primary';
+}
+$('#btnToggle').onclick = async ()=>{
+  const running = $('#botLabel').textContent.startsWith('Monitorando');
+  await api('/api/runner/'+(running?'stop':'start'), {method:'POST'});
+  refreshRunner();
+  toast(running?'Monitoramento desligado':'Monitoramento ligado', 'ok');
+};
+
+// ---------- Config ----------
+async function loadConfig(){
+  CFG = await api('/api/config');
+  $('#cfgPoll').value = CFG.poll_interval;
+  $('#cfgTz').value = CFG.timezone;
+  $('#cfgDate').value = CFG.date_format;
+  $('#cfgTokenState').textContent = CFG.token_set ? ('Token atual: '+CFG.token_preview) : '⚠️ Nenhum token configurado';
+  $('#cfgCreds').innerHTML = CFG.credentials_ok ? '✅ Credencial do Google encontrada.' : '⚠️ Credencial do Google não encontrada.';
+}
+$('#btnSaveCfg').onclick = async ()=>{
+  const body = {poll_interval:+$('#cfgPoll').value, timezone:$('#cfgTz').value, date_format:$('#cfgDate').value};
+  if($('#cfgToken').value.trim()) body.token = $('#cfgToken').value.trim();
+  await api('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  $('#cfgToken').value=''; await loadConfig(); scheduleSummaryRefresh(); toast('Configurações salvas','ok');
+};
+
+// ---------- Discord data ----------
+async function loadGuilds(){ try{ GUILDS = (await api('/api/discord/guilds')).guilds; }catch(e){ GUILDS=[]; } }
+async function channelsOf(gid){ try{ return (await api('/api/discord/'+gid+'/channels')).channels; }catch(e){ return []; } }
+async function rolesOf(gid){ try{ return (await api('/api/discord/'+gid+'/roles')).roles; }catch(e){ return []; } }
+
+// ================= EDITOR VISUAL =================
+function makePill(cls, token, label){
+  const s=document.createElement('span');
+  s.className='pill '+cls; s.contentEditable='false';
+  s.dataset.token=token; s.textContent=label;
+  return s;
+}
+function pillHtml(cls, token, label){
+  return `<span class="pill ${cls}" contenteditable="false" data-token="${escAttr(token)}">${escHtml(label)}</span>`;
+}
+function insertPill(editor, cls, token, label){
+  editor.focus();
+  const sel=window.getSelection();
+  if(!(sel && sel.rangeCount && editor.contains(sel.anchorNode)) && editor._savedRange){
+    sel.removeAllRanges(); sel.addRange(editor._savedRange);
+  }
+  // insertHTML mantém o Ctrl+Z (desfazer) funcionando, ao contrário de Range.insertNode
+  document.execCommand('insertHTML', false, pillHtml(cls, token, label) + ' ');
+  const s=window.getSelection();
+  if(s.rangeCount && editor.contains(s.anchorNode)) editor._savedRange=s.getRangeAt(0).cloneRange();
+}
+// editor(HTML) -> template(texto que o bot usa)
+function serializeEditor(el){
+  function ser(node, i){
+    if(node.nodeType===3) return node.nodeValue.replace(/ /g,' ');
+    if(node.nodeType!==1) return '';
+    if(node.dataset && node.dataset.token) return node.dataset.token;
+    const tag=node.tagName;
+    if(tag==='BR') return '\n';
+    if(tag==='DIV') return (i>0?'\n':'')+kids(node);
+    if(tag==='B'||tag==='STRONG') return '**'+kids(node)+'**';
+    if(tag==='I'||tag==='EM') return '*'+kids(node)+'*';
+    return kids(node);
+  }
+  function kids(n){ let s=''; n.childNodes.forEach((c,i)=>s+=ser(c,i)); return s; }
+  return kids(el).replace(/[ \t]+\n/g,'\n').replace(/\s+$/,'');
+}
+// template(texto) -> HTML do editor
+function templateToHtml(tmpl, roles){
+  const roleName = id => (roles.find(r=>String(r.id)===String(id))||{}).name;
+  const re=/(\{path\}|\{video\}|\{date\}|\{link\}|\{project\})|<@&(\d+)>|<@!?(\d+)>|@everyone|@here/g;
+  let html='', last=0, m;
+  const pill=(cls,token,label)=>`<span class="pill ${cls}" contenteditable="false" data-token="${escAttr(token)}">${escHtml(label)}</span>`;
+  while((m=re.exec(tmpl))){
+    html+=escHtml(tmpl.slice(last,m.index));
+    if(m[1]){ const f=FIELDS.find(x=>x.token===m[1]); html+=pill('fieldp',m[1],f?f.label:m[1]); }
+    else if(m[2]){ html+=pill('ment','<@&'+m[2]+'>','@'+(roleName(m[2])||'cargo')); }
+    else if(m[3]){ html+=pill('ment','<@'+m[3]+'>','@usuário'); }
+    else { html+=pill('ment',m[0],m[0]); }
+    last=re.lastIndex;
+  }
+  html+=escHtml(tmpl.slice(last));
+  html=html.replace(/\*\*([^*\n]+)\*\*/g,'<b>$1</b>');
+  html=html.replace(/\n/g,'<br>');
+  return html;
+}
+function renderEditor(card){
+  if(card._tmpl===undefined) return;
+  const ed=card.querySelector('[data-f="message"]');
+  ed.innerHTML = templateToHtml(card._tmpl, card._roles||[]);
+}
+
+// ---------- máscara de horário (autocompleta ":") ----------
+function attachTimeMask(inp){
+  inp.addEventListener('input', ()=>{
+    let d=inp.value.replace(/\D/g,'').slice(0,4);
+    inp.value = d.length<=2 ? d : d.slice(0,d.length-2)+':'+d.slice(-2);
+  });
+  inp.addEventListener('blur', ()=>{
+    let d=inp.value.replace(/\D/g,'');
+    if(!d){ inp.value=''; return; }
+    d=d.slice(0,4);
+    let h,mn;
+    if(d.length<=2){ h=d; mn='0'; } else { h=d.slice(0,d.length-2); mn=d.slice(-2); }
+    h=Math.min(23, parseInt(h||'0',10)); mn=Math.min(59, parseInt(mn||'0',10));
+    inp.value = String(h).padStart(2,'0')+':'+String(mn).padStart(2,'0');
+  });
+}
+
+// ---------- Projetos: lista-resumo <-> detalhe ----------
+async function loadProjects(){ PROJECTS = (await api('/api/projects')).projects; renderSummary(); }
+
+function renderSummary(){
+  const w=$('#projects'); w.innerHTML=''; w.classList.add('grid');
+  $('#btnAdd').style.display='';
+  const dayLbl={seg:'Seg',ter:'Ter',qua:'Qua',qui:'Qui',sex:'Sex',sab:'Sáb',dom:'Dom'};
+  PROJECTS.forEach((p,i)=>{
+    const c=document.createElement('div'); c.className='scard'; c.dataset.idx=i; c.onclick=()=>openDetail(i);
+    const days=(p.active_days||'').split(',').filter(Boolean).map(d=>dayLbl[d]||d).join(', ');
+    const horario=(p.active_start||p.active_end)?((p.active_start||'00:00')+'–'+(p.active_end||'23:59')):'';
+    const agenda=(days?days:'todos os dias')+(horario?' · '+horario:' · horário livre');
+    const idx=(p.required_indices||[]).join(', ')||'—';
+    c.innerHTML=`<div class="scard-top"><div class="scard-name">${escHtml(p.name)}</div><span class="scard-badge" data-b>…</span></div>
+      <div class="scard-meta">🎬 arquivos ${escHtml(idx)} · 🗓️ ${escHtml(agenda)}</div>
+      <div class="scard-folders" data-folders><span class="muted" style="font-size:15px">consultando o Drive…</span></div>`;
+    w.appendChild(c);
+    loadCardStatus(c, i);
+  });
+  scheduleSummaryRefresh();
+}
+
+// atualiza APENAS o status (badge + pastas) de um card, sem reconstruí-lo (evita "piscar")
+function loadCardStatus(c, i){
+  api('/api/projects/'+i+'/status').then(s=>{
+    const b=c.querySelector('[data-b]'), fbox=c.querySelector('[data-folders]'); if(!b||!fbox) return;
+    if(s.error){ b.textContent='⚠️ configurar'; b.className='scard-badge warn'; fbox.innerHTML='<span class="muted" style="font-size:15px">Configure pasta e canal.</span>'; return; }
+    b.textContent = s.active ? '🟢 ativo' : '⏸ fora do horário';
+    b.className = 'scard-badge '+(s.active?'ok':'off');
+    if(!s.date_found){ fbox.innerHTML='<span class="muted" style="font-size:15px">📅 Pasta de hoje ('+escHtml(s.date||'?')+') ainda não existe.</span>'; return; }
+    const real=(s.folders||[]).filter(f=>f.numbers.length>0 || f.complete);
+    if(!real.length){ fbox.innerHTML='<span class="muted" style="font-size:15px">Nenhuma gravação identificada ainda.</span>'; return; }
+    fbox.innerHTML = real.map(f=>{
+      let ic,cls;
+      if(f.notified){ ic='📨'; cls='sent'; } else if(f.complete){ ic='✅'; cls='ok'; } else { ic='⏳'; cls='wait'; }
+      const miss=(!f.complete && f.missing.length)?' <span class="fmiss">falta '+f.missing.join(',')+'</span>':'';
+      return '<div class="ffrow '+cls+'" title="'+escAttr(f.path)+'">'+ic+' '+escHtml(f.path)+miss+'</div>';
+    }).join('');
+  }).catch(()=>{ const fb=c.querySelector('[data-folders]'); if(fb) fb.innerHTML='<span class="muted" style="font-size:15px">erro ao consultar</span>'; });
+}
+
+// auto-atualização dos cards no MESMO intervalo da checagem (aba Configurações)
+let summaryTimer=null;
+function scheduleSummaryRefresh(){
+  if(summaryTimer) clearInterval(summaryTimer);
+  const sec=Math.max(15, CFG.poll_interval||300);
+  summaryTimer=setInterval(()=>{
+    const grid=$('#projects');
+    const onProjetos = document.querySelector('.tab.active') && document.querySelector('.tab.active').dataset.tab==='projetos';
+    if(grid.classList.contains('grid') && onProjetos){
+      grid.querySelectorAll('.scard').forEach(card=>loadCardStatus(card, +card.dataset.idx));
+    }
+  }, sec*1000);
+}
+
+function openDetail(i){
+  const w=$('#projects'); w.innerHTML=''; w.classList.remove('grid'); $('#btnAdd').style.display='none';
+  w.appendChild(projectCard(PROJECTS[i], i));
+  window.scrollTo(0,0);
+}
+
+function projectCard(p, i){
+  const card = document.createElement('div'); card.className='card';
+  const days = (p.active_days||'').split(',').map(s=>s.trim()).filter(Boolean);
+  const idxSel = new Set(p.required_indices||[]);
+  card.innerHTML = `
+    <button class="ghost" data-act="back" style="margin-bottom:14px">← Voltar aos projetos</button>
+    <div class="row">
+      <div class="field"><label>Nome do projeto</label><input data-f="name" value="${escAttr(p.name)}"></div>
+      <div class="field"><label>ID da pasta MIDIAS (Drive)</label><input data-f="folder" value="${escAttr(p.midias_folder_id)}">
+        <div class="copyrow"><span class="muted">📧 Compartilhe a pasta no Drive com o robô:</span><code data-botemail>—</code><button type="button" class="tb" data-copyemail>📋 Copiar</button></div>
+      </div>
+    </div>
+    <div class="row">
+      <div class="field">
+        <label>Arquivos que completam a gravação</label>
+        <div class="idx">${[1,2,3,4,5,6].map(n=>`<label><input type="checkbox" data-idx="${n}" ${idxSel.has(n)?'checked':''}>${n}</label>`).join('')}</div>
+      </div>
+    </div>
+    <div class="row">
+      <div class="field"><label>Servidor</label><select data-f="guild"></select></div>
+      <div class="field"><label>Canal de texto</label><select data-f="channel"></select></div>
+    </div>
+    <div class="row">
+      <div class="field">
+        <label>Dias ativos (vazio = todos)</label>
+        <div class="days">${DAYS.map(([v,l])=>`<label><input type="checkbox" data-day="${v}" ${days.includes(v)?'checked':''}>${l}</label>`).join('')}</div>
+      </div>
+      <div class="field" style="max-width:130px"><label>Início</label><input class="time" data-f="start" value="${escAttr(p.active_start||'')}" placeholder="--:--" inputmode="numeric"></div>
+      <div class="field" style="max-width:130px"><label>Fim</label><input class="time" data-f="end" value="${escAttr(p.active_end||'')}" placeholder="--:--" inputmode="numeric"></div>
+    </div>
+    <div class="row">
+      <div class="field">
+        <label>Mensagem enviada</label>
+        <div class="toolbar">
+          <button type="button" class="tb" data-bold title="Negrito (selecione o texto e clique)"><b>N</b> Negrito</button>
+          <span class="tbsep"></span>
+          <span class="muted" style="align-self:center">Inserir:</span>
+          ${FIELDS.map(f=>`<button type="button" class="tb" data-field="${f.token}">${f.label}</button>`).join('')}
+        </div>
+        <div class="editor" data-f="message" contenteditable="true" data-ph="Escreva a mensagem aqui… use os botões acima para inserir campos."></div>
+        <label style="margin-top:10px">Marcar (@) — clique para inserir na mensagem</label>
+        <div class="chips" data-mentions>
+          <span class="chip" data-token="@everyone" data-label="@everyone">@everyone</span>
+          <span class="chip" data-token="@here" data-label="@here">@here</span>
+        </div>
+      </div>
+    </div>
+    <div class="statusbox hidden" data-status></div>
+    <div class="actions">
+      <button class="primary" data-act="save">💾 Salvar</button>
+      <button class="ghost" data-act="status">🔎 Ver status agora</button>
+      <button class="ghost" data-act="test">🧪 Testar envio</button>
+      <div class="spacer" style="flex:1"></div>
+      <button class="danger" data-act="del">🗑️ Excluir</button>
+    </div>`;
+
+  const editor = card.querySelector('[data-f="message"]');
+  const guildSel = card.querySelector('[data-f="guild"]');
+  const chanSel = card.querySelector('[data-f="channel"]');
+  guildSel.innerHTML = GUILDS.map(g=>`<option value="${g.id}">${escHtml(g.name)}</option>`).join('') || '<option value="">(nenhum servidor)</option>';
+
+  // guarda a última posição do cursor dentro do editor
+  const saveSel=()=>{ const s=window.getSelection(); if(s.rangeCount && editor.contains(s.anchorNode)) editor._savedRange=s.getRangeAt(0).cloneRange(); };
+  editor.addEventListener('keyup', saveSel);
+  editor.addEventListener('mouseup', saveSel);
+  editor.addEventListener('blur', saveSel);
+
+  // toolbar: negrito + inserir campos
+  const bold = card.querySelector('[data-bold]');
+  bold.addEventListener('mousedown', e=>e.preventDefault()); // não rouba o foco do editor
+  bold.onclick = ()=>{ editor.focus(); if(editor._savedRange){const s=window.getSelection();s.removeAllRanges();s.addRange(editor._savedRange);} document.execCommand('bold'); };
+  card.querySelectorAll('[data-field]').forEach(btn=>{
+    btn.addEventListener('mousedown', e=>e.preventDefault());
+    btn.onclick=()=>{ const f=FIELDS.find(x=>x.token===btn.dataset.field); insertPill(editor,'fieldp',f.token,f.label); };
+  });
+  // menções (chips) -> inserir pílula na posição do cursor
+  const mentBox = card.querySelector('[data-mentions]');
+  mentBox.addEventListener('mousedown', e=>{ if(e.target.closest('.chip')) e.preventDefault(); });
+  mentBox.addEventListener('click',(e)=>{
+    const chip=e.target.closest('.chip'); if(!chip) return;
+    insertPill(editor,'ment',chip.dataset.token,chip.dataset.label);
+  });
+
+  async function fillChannels(gid, selected){
+    const chans = await channelsOf(gid);
+    chanSel.innerHTML = '<option value="0">— escolha —</option>'+chans.map(c=>`<option value="${c.id}" ${String(c.id)===String(selected)?'selected':''}># ${escHtml(c.name)}</option>`).join('');
+    const roles = await rolesOf(gid);
+    card._roles = roles;
+    const mrow = card.querySelector('[data-mentions]');
+    mrow.querySelectorAll('.chip[data-role]').forEach(e=>e.remove());
+    roles.forEach(r=>{ const c=document.createElement('span'); c.className='chip'; c.dataset.role='1'; c.dataset.token='<@&'+r.id+'>'; c.dataset.label='@'+r.name; c.textContent='@'+r.name; mrow.appendChild(c); });
+    renderEditor(card); // re-render p/ nomear os cargos nas pílulas
+  }
+
+  (async ()=>{
+    let gid = GUILDS[0]?.id || '';
+    if(p.discord_channel_id && p.discord_channel_id!=='0'){ try{ gid = (await api('/api/discord/guild-of-channel/'+p.discord_channel_id)).guild_id || gid; }catch(e){} }
+    if(gid){ guildSel.value = gid; await fillChannels(gid, p.discord_channel_id); }
+  })();
+  guildSel.onchange = ()=>fillChannels(guildSel.value, 0);
+
+  // carrega o texto da mensagem e renderiza no editor
+  api('/api/projects/'+i+'/message').then(r=>{ card._tmpl=r.text||''; renderEditor(card); }).catch(()=>{ card._tmpl=''; renderEditor(card); });
+
+  // máscara de horário
+  card.querySelectorAll('.time').forEach(attachTimeMask);
+
+  const emailEl = card.querySelector('[data-botemail]'); if(emailEl) emailEl.textContent = BOT_EMAIL || '(credencial não encontrada)';
+  const copyBtn = card.querySelector('[data-copyemail]'); if(copyBtn) copyBtn.onclick = ()=>copyText(BOT_EMAIL);
+  card.querySelector('[data-act="back"]').onclick = ()=>renderSummary();
+  card.querySelector('[data-act="save"]').onclick = ()=>saveProject(card, i);
+  card.querySelector('[data-act="del"]').onclick = ()=>delProject(i, p.name);
+  card.querySelector('[data-act="status"]').onclick = ()=>showStatus(card, i);
+  card.querySelector('[data-act="test"]').onclick = ()=>testSend(card, i);
+  return card;
+}
+
+function collect(card){
+  const idx = [...card.querySelectorAll('[data-idx]:checked')].map(c=>+c.dataset.idx).sort((a,b)=>a-b);
+  const days = [...card.querySelectorAll('[data-day]:checked')].map(c=>c.dataset.day).join(',');
+  return {
+    name: card.querySelector('[data-f="name"]').value.trim(),
+    midias_folder_id: card.querySelector('[data-f="folder"]').value.trim(),
+    required_indices: idx,
+    discord_channel_id: card.querySelector('[data-f="channel"]').value || "0",
+    active_days: days,
+    active_start: card.querySelector('[data-f="start"]').value.trim(),
+    active_end: card.querySelector('[data-f="end"]').value.trim(),
+    message: serializeEditor(card.querySelector('[data-f="message"]')),
+  };
+}
+
+async function saveProject(card, i){
+  const d = collect(card);
+  try{
+    await api('/api/projects/'+i, {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)});
+    await api('/api/projects/'+i+'/message', {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:d.message})});
+    toast('Projeto salvo ✅','ok'); await loadProjects();
+  }catch(e){ toast(e.message,'err'); }
+}
+async function delProject(i, name){
+  if(!confirm('Excluir o projeto "'+name+'"?')) return;
+  await api('/api/projects/'+i, {method:'DELETE'}); toast('Projeto excluído','ok'); loadProjects();
+}
+async function showStatus(card, i){
+  const box = card.querySelector('[data-status]'); box.classList.remove('hidden'); box.innerHTML='Consultando o Drive…';
+  try{
+    const s = await api('/api/projects/'+i+'/status');
+    if(s.error){ box.innerHTML='⚠️ '+escHtml(s.error); return; }
+    if(!s.date_found){ box.innerHTML='Pasta da data <b>'+escHtml(s.date||'?')+'</b> ainda não existe no Drive.'; return; }
+    if(!s.folders.length){ box.innerHTML='Data <b>'+escHtml(s.date)+'</b>: nenhuma subpasta encontrada.'; return; }
+    box.innerHTML = '<div class="muted" style="margin-bottom:6px">Data '+escHtml(s.date)+' · '+escHtml(s.window)+(s.active?' · <b style="color:#5cd682">ativo agora</b>':' · fora do horário')+'</div>'+
+      s.folders.map(f=>{
+        const badge = f.notified?'<span class="badge b-sent">já avisado</span>':(f.complete?'<span class="badge b-ok">completo</span>':'<span class="badge b-wait">faltando '+f.missing.join(',')+'</span>');
+        return '<div class="frow"><a href="'+f.link+'" target="_blank">'+escHtml(f.path)+'</a><span class="muted">['+f.numbers.join(',')+']</span><div style="flex:1"></div>'+badge+'</div>';
+      }).join('');
+  }catch(e){ box.innerHTML='⚠️ '+escHtml(e.message); }
+}
+async function testSend(card, i){
+  try{ await api('/api/projects/'+i+'/test', {method:'POST'}); toast('Mensagem de teste enviada ✅','ok'); }
+  catch(e){ toast(e.message,'err'); }
+}
+
+$('#btnAdd').onclick = async ()=>{
+  const r = await api('/api/projects', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:'Novo projeto'})});
+  PROJECTS = r.projects; toast('Projeto criado — preencha os dados','ok'); openDetail(PROJECTS.length-1);
+};
+
+// ---------- Histórico ----------
+async function loadHistory(){
+  const h = (await api('/api/history')).history;
+  $('#histBody').innerHTML = h.length ? h.map(r=>`<tr>
+    <td>${escHtml(r.sent_at||'')}</td><td>${escHtml(r.project||'')}</td><td>${escHtml(r.path||r.folder_id)}</td>
+    <td><button class="ghost" onclick="forget('${r.folder_id}')">Reenviar</button></td></tr>`).join('')
+    : '<tr><td colspan="4" class="muted">Nada ainda.</td></tr>';
+}
+async function forget(fid){ await api('/api/history/forget',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({folder_id:fid})}); toast('Ok, pode ser reenviado','ok'); loadHistory(); }
+
+// ---------- init ----------
+(async ()=>{
+  try{ BOT_EMAIL = (await api('/api/bot-email')).email || ''; }catch(e){ BOT_EMAIL=''; }
+  await loadConfig(); await loadGuilds(); await loadProjects(); await refreshRunner();
+  setInterval(refreshRunner, 5000);
+})();
+</script>
+</body>
+</html>
