@@ -27,10 +27,13 @@ _MAX_DEPTH = 4
 
 
 class Drive:
-    def __init__(self, credentials_file: str):
-        creds = service_account.Credentials.from_service_account_file(
-            credentials_file, scopes=SCOPES
-        )
+    def __init__(self, credentials):
+        """`credentials` pode ser um caminho de arquivo (str) ou um dict já
+        carregado (usado na Vercel, onde a credencial vem de uma env var)."""
+        if isinstance(credentials, dict):
+            creds = service_account.Credentials.from_service_account_info(credentials, scopes=SCOPES)
+        else:
+            creds = service_account.Credentials.from_service_account_file(credentials, scopes=SCOPES)
         self.service = build("drive", "v3", credentials=creds, cache_discovery=False)
 
     # ---------- helpers de listagem ----------

@@ -1,128 +1,83 @@
-"""Configuracoes globais (.env) e lista de projetos (projects.json).
-Feito para ser lido E escrito pelo painel web, sem travar se algo faltar."""
+"""Configuracoes globais. Le do .env localmente e das variaveis de ambiente na Vercel.
+A configuracao dos PROJETOS (pasta, canal, mensagem, agenda) vive no Supabase (db.py),
+nao mais em arquivos locais - assim funciona igual local e na nuvem."""
 from __future__ import annotations
 
-import json
 import os
 from pathlib import Path
 
-from dotenv import load_dotenv, set_key
+from dotenv import load_dotenv
 
 from window import ActiveWindow
 
 BASE_DIR = Path(__file__).resolve().parent
-ENV_FILE = BASE_DIR / ".env"
-PROJECTS_FILE = BASE_DIR / "projects.json"
-STATE_FILE = BASE_DIR / "state.json"
-MESSAGES_DIR = BASE_DIR / "messages"
-CREDENTIALS_DEFAULT = "credentials/service_account.json"
-
-_DEFAULTS = {
-    "POLL_INTERVAL_SECONDS": "300",
-    "TIMEZONE": "America/Sao_Paulo",
-    "DATE_FORMAT": "%Y%m%d",
-    "GOOGLE_CREDENTIALS_FILE": CREDENTIALS_DEFAULT,
-    "DISCORD_TOKEN": "",
-}
+load_dotenv(BASE_DIR / ".env")
 
 
-def reload_env() -> None:
-    load_dotenv(ENV_FILE, override=True)
+def env(key: str, default: str = "") -> str:
+    return os.getenv(key, default)
 
 
-reload_env()
+# ----- Segredos / globais -----
+DISCORD_TOKEN = env("DISCORD_TOKEN")
+SUPABASE_URL = env("SUPABASE_URL")
+SUPABASE_SERVICE_ROLE_KEY = env("SUPABASE_SERVICE_ROLE_KEY")
+
+# Credencial do Google: em produção (Vercel) vem como o JSON inteiro numa env var
+# (não dá para gravar arquivo). Localmente também aceitamos um arquivo em disco.
+GOOGLE_SERVICE_ACCOUNT_JSON = env("GOOGLE_SERVICE_ACCOUNT_JSON")
+GOOGLE_CREDENTIALS_FILE = str(BASE_DIR / env("GOOGLE_CREDENTIALS_FILE", "credentials/service_account.json"))
+
+# Protege o painel web (login simples) e o endpoint de checagem (chamado pelo GitHub Actions)
+PANEL_PASSWORD = env("PANEL_PASSWORD")
+CRON_SECRET = env("CRON_SECRET")
 
 
-# ---------- leitura/escrita de globais (.env) ----------
-def get(key: str, default: str | None = None) -> str:
-    val = os.getenv(key)
-    if val is None or val == "":
-        return _DEFAULTS.get(key, "") if default is None else default
-    return val
-
-
-def set_env(key: str, value: str) -> None:
-    if not ENV_FILE.exists():
-        ENV_FILE.write_text("", encoding="utf-8")
-    set_key(str(ENV_FILE), key, value)
-    reload_env()
-
-
-def discord_token() -> str:
-    return get("DISCORD_TOKEN", "")
-
-
-def google_credentials_file() -> str:
-    return str(BASE_DIR / get("GOOGLE_CREDENTIALS_FILE", CREDENTIALS_DEFAULT))
+def google_credentials():
+    """Retorna as credenciais do Google: um dict (se veio de env var JSON) ou um
+    caminho de arquivo (fallback local)."""
+    if GOOGLE_SERVICE_ACCOUNT_JSON.strip():
+        import json
+        return json.loads(GOOGLE_SERVICE_ACCOUNT_JSON)
+    return GOOGLE_CREDENTIALS_FILE
 
 
 def credentials_ok() -> bool:
-    return Path(google_credentials_file()).exists()
+    if GOOGLE_SERVICE_ACCOUNT_JSON.strip():
+        return True
+    return Path(GOOGLE_CREDENTIALS_FILE).exists()
 
 
-def poll_interval() -> int:
-    try:
-        return int(get("POLL_INTERVAL_SECONDS", "300"))
-    except ValueError:
-        return 300
-
-
-def timezone() -> str:
-    return get("TIMEZONE", "America/Sao_Paulo")
-
-
-def date_format() -> str:
-    return get("DATE_FORMAT", "%Y%m%d")
-
-
-# ---------- projetos ----------
 class Project:
-    """Um projeto = uma pasta MIDIAS + regras proprias de deteccao, canal e mensagem."""
+    """Envolve uma linha da tabela `projects` do Supabase com a mesma interface
+    que o resto do codigo (checker.py, webapp) ja espera."""
 
-    def __init__(self, raw: dict):
-        self.raw = raw
-        self.name = raw.get("name", "Sem nome")
-        self.midias_folder_id = str(raw.get("midias_folder_id", "")).strip()
-        self.required_indices = set(int(n) for n in raw.get("required_indices", []))
-        try:
-            self.channel_id = int(raw.get("discord_channel_id", 0) or 0)
-        except (TypeError, ValueError):
-            self.channel_id = 0
-        self.message_file = BASE_DIR / raw.get("message_file", "messages/default.txt")
+    def __init__(self, row: dict, timezone: str):
+        self.row = row
+        self.id = row["id"]
+        self.name = row.get("name", "Sem nome")
+        self.midias_folder_id = (row.get("midias_folder_id") or "").strip()
+        self.required_indices = set(int(n) for n in (row.get("required_indices") or []))
+        self.channel_id = int(row.get("discord_channel_id") or 0)
+        self.message_text = row.get("message_text", "")
         self.window = ActiveWindow(
-            timezone(),
-            raw.get("active_days", ""),
-            raw.get("active_start", ""),
-            raw.get("active_end", ""),
+            timezone,
+            row.get("active_days", ""),
+            row.get("active_start", ""),
+            row.get("active_end", ""),
         )
 
     def read_message(self) -> str:
-        if self.message_file.exists():
-            return self.message_file.read_text(encoding="utf-8")
-        return ""
+        return self.message_text
 
     def is_configured(self) -> bool:
         return (
             self.channel_id > 0
             and bool(self.midias_folder_id)
-            and not self.midias_folder_id.startswith("cole_")
             and len(self.required_indices) > 0
         )
 
 
-def load_projects_raw() -> list[dict]:
-    if not PROJECTS_FILE.exists():
-        return []
-    data = json.loads(PROJECTS_FILE.read_text(encoding="utf-8"))
-    return data.get("projects", [])
-
-
-def save_projects_raw(projects: list[dict]) -> None:
-    PROJECTS_FILE.write_text(
-        json.dumps({"projects": projects}, indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
-
-
-def load_projects() -> list[Project]:
-    return [Project(p) for p in load_projects_raw()]
+def load_projects(timezone: str) -> list[Project]:
+    import db
+    return [Project(row, timezone) for row in db.list_projects()]

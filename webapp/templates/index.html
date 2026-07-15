@@ -323,7 +323,8 @@ function renderSummary(){
 
 // atualiza APENAS o status (badge + pastas) de um card, sem reconstruí-lo (evita "piscar")
 function loadCardStatus(c, i){
-  api('/api/projects/'+i+'/status').then(s=>{
+  const pid = PROJECTS[i] && PROJECTS[i].id; if(!pid) return;
+  api('/api/projects/'+pid+'/status').then(s=>{
     const b=c.querySelector('[data-b]'), fbox=c.querySelector('[data-folders]'); if(!b||!fbox) return;
     if(s.error){ b.textContent='⚠️ configurar'; b.className='scard-badge warn'; fbox.innerHTML='<span class="muted" style="font-size:15px">Configure pasta e canal.</span>'; return; }
     b.textContent = s.active ? '🟢 ativo' : '⏸ fora do horário';
@@ -462,7 +463,7 @@ function projectCard(p, i){
   guildSel.onchange = ()=>fillChannels(guildSel.value, 0);
 
   // carrega o texto da mensagem e renderiza no editor
-  api('/api/projects/'+i+'/message').then(r=>{ card._tmpl=r.text||''; renderEditor(card); }).catch(()=>{ card._tmpl=''; renderEditor(card); });
+  api('/api/projects/'+p.id+'/message').then(r=>{ card._tmpl=r.text||''; renderEditor(card); }).catch(()=>{ card._tmpl=''; renderEditor(card); });
 
   // máscara de horário
   card.querySelectorAll('.time').forEach(attachTimeMask);
@@ -494,20 +495,21 @@ function collect(card){
 
 async function saveProject(card, i){
   const d = collect(card);
+  const pid = PROJECTS[i].id;
   try{
-    await api('/api/projects/'+i, {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)});
-    await api('/api/projects/'+i+'/message', {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:d.message})});
+    await api('/api/projects/'+pid, {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)});
+    await api('/api/projects/'+pid+'/message', {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:d.message})});
     toast('Projeto salvo ✅','ok'); await loadProjects();
   }catch(e){ toast(e.message,'err'); }
 }
 async function delProject(i, name){
   if(!confirm('Excluir o projeto "'+name+'"?')) return;
-  await api('/api/projects/'+i, {method:'DELETE'}); toast('Projeto excluído','ok'); loadProjects();
+  await api('/api/projects/'+PROJECTS[i].id, {method:'DELETE'}); toast('Projeto excluído','ok'); loadProjects();
 }
 async function showStatus(card, i){
   const box = card.querySelector('[data-status]'); box.classList.remove('hidden'); box.innerHTML='Consultando o Drive…';
   try{
-    const s = await api('/api/projects/'+i+'/status');
+    const s = await api('/api/projects/'+PROJECTS[i].id+'/status');
     if(s.error){ box.innerHTML='⚠️ '+escHtml(s.error); return; }
     if(!s.date_found){ box.innerHTML='Pasta da data <b>'+escHtml(s.date||'?')+'</b> ainda não existe no Drive.'; return; }
     if(!s.folders.length){ box.innerHTML='Data <b>'+escHtml(s.date)+'</b>: nenhuma subpasta encontrada.'; return; }
@@ -519,7 +521,7 @@ async function showStatus(card, i){
   }catch(e){ box.innerHTML='⚠️ '+escHtml(e.message); }
 }
 async function testSend(card, i){
-  try{ await api('/api/projects/'+i+'/test', {method:'POST'}); toast('Mensagem de teste enviada ✅','ok'); }
+  try{ await api('/api/projects/'+PROJECTS[i].id+'/test', {method:'POST'}); toast('Mensagem de teste enviada ✅','ok'); }
   catch(e){ toast(e.message,'err'); }
 }
 

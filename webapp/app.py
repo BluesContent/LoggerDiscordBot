@@ -1,67 +1,82 @@
-"""Painel web local (Flask) para administrar o bot Multicorder."""
+"""Painel web (Flask) para administrar o bot Multicorder. Roda tanto localmente
+quanto na Vercel (api/index.py importa `app` daqui). Toda a config de projetos e
+o estado (quem ja foi avisado) vivem no Supabase — nao ha mais arquivos locais."""
 from __future__ import annotations
 
 import re
 import sys
-import threading
-import time
 from pathlib import Path
 
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, request, send_from_directory, session, redirect, make_response
 
-# permite importar os modulos do projeto (pasta pai)
 BASE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE))
 
 import config  # noqa: E402
 import checker  # noqa: E402
+import db  # noqa: E402
 from drive import Drive  # noqa: E402
 from notifier import Discord, DiscordError  # noqa: E402
-from state import State  # noqa: E402
 
 app = Flask(__name__, static_folder=None)
+app.secret_key = config.env("FLASK_SECRET_KEY", "") or "dev-only-insecure-key-troque-no-.env"
+
+LOGIN_HTML = """<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
+<title>Login — Painel Multicorder</title>
+<style>
+body{{font-family:-apple-system,Segoe UI,sans-serif;background:#0f1117;color:#e6e8ee;
+display:flex;align-items:center;justify-content:center;height:100vh;margin:0}}
+.box{{background:#1a1d27;border:1px solid #2e3446;border-radius:14px;padding:36px;width:320px}}
+h1{{font-size:20px;margin:0 0 18px}}
+input{{width:100%;padding:10px 12px;border-radius:8px;border:1px solid #2e3446;background:#0f1117;
+color:#e6e8ee;font-size:14px;box-sizing:border-box;margin-bottom:12px}}
+button{{width:100%;padding:10px;border:none;border-radius:8px;background:#5865F2;color:#fff;
+font-size:14px;cursor:pointer}}
+.err{{color:#f6a3a3;font-size:13px;margin-bottom:10px}}
+</style></head><body>
+<form class="box" method="POST">
+  <h1>🎬 Painel Multicorder</h1>
+  {error}
+  <input type="password" name="password" placeholder="Senha" autofocus>
+  <button type="submit">Entrar</button>
+</form>
+</body></html>"""
 
 
-# ===================== Runner (Ligar/Desligar monitoramento) =====================
-class Runner:
-    def __init__(self):
-        self.thread: threading.Thread | None = None
-        self.stop_event = threading.Event()
-        self.last_run = None
-        self.last_summary = None
-        self.last_error = None
-
-    @property
-    def running(self) -> bool:
-        return self.thread is not None and self.thread.is_alive()
-
-    def _loop(self):
-        while not self.stop_event.is_set():
-            try:
-                results = checker.run_all()
-                self.last_summary = results
-                self.last_error = None
-                self.last_run = time.strftime("%Y-%m-%d %H:%M:%S")
-            except Exception as e:  # noqa
-                self.last_error = str(e)
-            # dorme em passos curtos para poder parar rapido
-            for _ in range(max(1, config.poll_interval())):
-                if self.stop_event.is_set():
-                    break
-                time.sleep(1)
-
-    def start(self):
-        if self.running:
-            return
-        self.stop_event.clear()
-        self.thread = threading.Thread(target=self._loop, daemon=True)
-        self.thread.start()
-
-    def stop(self):
-        self.stop_event.set()
+def _auth_required() -> bool:
+    return bool(config.PANEL_PASSWORD)
 
 
-runner = Runner()
+@app.before_request
+def require_login():
+    if not _auth_required():
+        return None
+    if request.path == "/login" or request.path.startswith("/static"):
+        return None
+    if session.get("authed"):
+        return None
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "não autenticado"}), 401
+    return redirect("/login")
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if not _auth_required():
+        return redirect("/")
+    error = ""
+    if request.method == "POST":
+        if request.form.get("password", "") == config.PANEL_PASSWORD:
+            session["authed"] = True
+            return redirect("/")
+        error = '<div class="err">Senha incorreta.</div>'
+    return LOGIN_HTML.format(error=error)
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect("/login")
 
 
 # ===================== Helpers =====================
@@ -71,25 +86,17 @@ def _slug(name: str) -> str:
 
 
 def _discord() -> Discord:
-    return Discord(config.discord_token())
+    return Discord(config.DISCORD_TOKEN)
 
 
-def _valid_index(i: int) -> bool:
-    return 0 <= i < len(config.load_projects_raw())
+def _project_out(row: dict) -> dict:
+    """discord_channel_id como STRING — snowflakes do Discord estouram o Number do JS."""
+    q = dict(row)
+    q["discord_channel_id"] = str(row.get("discord_channel_id", 0) or 0)
+    return q
 
 
-def _projects_out(projects: list[dict]) -> list[dict]:
-    """IDs do Discord (snowflakes) sao grandes demais para o Number do JS.
-    Envia-os como STRING para nao perder precisao no navegador."""
-    out = []
-    for p in projects:
-        q = dict(p)
-        q["discord_channel_id"] = str(p.get("discord_channel_id", 0) or 0)
-        out.append(q)
-    return out
-
-
-# ===================== Rotas de pagina =====================
+# ===================== Página =====================
 @app.route("/")
 def index():
     return send_from_directory(Path(__file__).parent / "templates", "index.html")
@@ -98,14 +105,14 @@ def index():
 # ===================== Config global =====================
 @app.get("/api/config")
 def get_config():
-    token = config.discord_token()
+    settings = db.get_settings()
     return jsonify({
-        "token_set": bool(token),
-        "token_preview": (token[:8] + "..." + token[-4:]) if token else "",
-        "poll_interval": config.poll_interval(),
-        "timezone": config.timezone(),
-        "date_format": config.date_format(),
+        "token_set": bool(config.DISCORD_TOKEN),
+        "poll_interval": int(settings.get("poll_interval_seconds", 300)),
+        "timezone": settings.get("timezone", "America/Sao_Paulo"),
+        "date_format": settings.get("date_format", "%Y%m%d"),
         "credentials_ok": config.credentials_ok(),
+        "monitoring_enabled": settings.get("monitoring_enabled", "true") == "true",
     })
 
 
@@ -113,25 +120,12 @@ def get_config():
 def set_config():
     data = request.get_json(force=True)
     if "poll_interval" in data:
-        config.set_env("POLL_INTERVAL_SECONDS", str(int(data["poll_interval"])))
-    if "timezone" in data and data["timezone"]:
-        config.set_env("TIMEZONE", str(data["timezone"]))
-    if "date_format" in data and data["date_format"]:
-        config.set_env("DATE_FORMAT", str(data["date_format"]))
-    if data.get("token"):  # so troca se veio um token novo
-        config.set_env("DISCORD_TOKEN", str(data["token"]).strip())
+        db.set_setting("poll_interval_seconds", str(int(data["poll_interval"])))
+    if data.get("timezone"):
+        db.set_setting("timezone", str(data["timezone"]))
+    if data.get("date_format"):
+        db.set_setting("date_format", str(data["date_format"]))
     return get_config()
-
-
-# ===================== E-mail do robô (conta de serviço) =====================
-@app.get("/api/bot-email")
-def bot_email():
-    import json as _json
-    try:
-        data = _json.loads(Path(config.google_credentials_file()).read_text(encoding="utf-8"))
-        return jsonify({"email": data.get("client_email", "")})
-    except Exception as e:  # noqa
-        return jsonify({"email": "", "error": str(e)})
 
 
 # ===================== Discord (consultas) =====================
@@ -170,150 +164,163 @@ def guild_of_channel(channel_id):
 # ===================== Projetos =====================
 @app.get("/api/projects")
 def list_projects():
-    return jsonify({"projects": _projects_out(config.load_projects_raw())})
+    return jsonify({"projects": [_project_out(r) for r in db.list_projects()]})
 
 
 @app.post("/api/projects")
 def add_project():
     data = request.get_json(force=True)
-    projects = config.load_projects_raw()
-    name = data.get("name") or f"Projeto {len(projects) + 1}"
-    msg_rel = f"messages/{_slug(name)}.txt"
-    msg_path = config.BASE_DIR / msg_rel
-    config.MESSAGES_DIR.mkdir(exist_ok=True)
-    if not msg_path.exists():
-        msg_path.write_text(
-            "🎬 **Gravação finalizada!**\n\n"
-            "A pasta **{path}** (data {date}) já está com todos os arquivos no Drive.\n\n"
-            "📁 {link}\n",
-            encoding="utf-8",
-        )
-    projects.append({
+    name = data.get("name") or "Novo projeto"
+    row = db.create_project({
         "name": name,
         "midias_folder_id": data.get("midias_folder_id", ""),
-        "required_indices": data.get("required_indices", [1, 2, 3, 5, 6]),
+        "required_indices": data.get("required_indices", [1, 2, 3, 4, 5, 6]),
         "discord_channel_id": int(data.get("discord_channel_id", 0) or 0),
-        "message_file": msg_rel,
+        "message_text": data.get("message_text",
+            "🎬 **Gravação finalizada!**\n\nA pasta **{path}** (data {date}) já está com todos os arquivos no Drive.\n\n📁 {link}"),
         "active_days": data.get("active_days", ""),
         "active_start": data.get("active_start", ""),
         "active_end": data.get("active_end", ""),
     })
-    config.save_projects_raw(projects)
-    return jsonify({"projects": _projects_out(projects)})
+    return jsonify({"projects": [_project_out(r) for r in db.list_projects()], "created_id": row["id"]})
 
 
-@app.put("/api/projects/<int:i>")
-def update_project(i):
-    if not _valid_index(i):
-        return jsonify({"error": "projeto inexistente"}), 404
+@app.put("/api/projects/<project_id>")
+def update_project(project_id):
     data = request.get_json(force=True)
-    projects = config.load_projects_raw()
-    p = projects[i]
+    patch = {}
     for key in ("name", "midias_folder_id", "active_days", "active_start", "active_end"):
         if key in data:
-            p[key] = data[key]
+            patch[key] = data[key]
     if "required_indices" in data:
-        p["required_indices"] = [int(n) for n in data["required_indices"]]
+        patch["required_indices"] = [int(n) for n in data["required_indices"]]
     if "discord_channel_id" in data:
-        p["discord_channel_id"] = int(data["discord_channel_id"] or 0)
-    projects[i] = p
-    config.save_projects_raw(projects)
-    return jsonify({"projects": _projects_out(projects)})
+        patch["discord_channel_id"] = int(data["discord_channel_id"] or 0)
+    if "message" in data:
+        patch["message_text"] = data["message"]
+    try:
+        db.update_project(project_id, patch)
+    except db.DBError as e:
+        return jsonify({"error": str(e)}), 404
+    return jsonify({"projects": [_project_out(r) for r in db.list_projects()]})
 
 
-@app.delete("/api/projects/<int:i>")
-def delete_project(i):
-    if not _valid_index(i):
+@app.delete("/api/projects/<project_id>")
+def delete_project(project_id):
+    db.delete_project(project_id)
+    return jsonify({"projects": [_project_out(r) for r in db.list_projects()]})
+
+
+@app.get("/api/projects/<project_id>/message")
+def get_message(project_id):
+    row = db.get_project(project_id)
+    if not row:
         return jsonify({"error": "projeto inexistente"}), 404
-    projects = config.load_projects_raw()
-    projects.pop(i)
-    config.save_projects_raw(projects)
-    return jsonify({"projects": _projects_out(projects)})
+    return jsonify({"text": row.get("message_text", "")})
 
 
-@app.get("/api/projects/<int:i>/message")
-def get_message(i):
-    if not _valid_index(i):
-        return jsonify({"error": "projeto inexistente"}), 404
-    return jsonify({"text": config.load_projects()[i].read_message()})
-
-
-@app.put("/api/projects/<int:i>/message")
-def set_message(i):
-    if not _valid_index(i):
-        return jsonify({"error": "projeto inexistente"}), 404
+@app.put("/api/projects/<project_id>/message")
+def set_message(project_id):
     text = request.get_json(force=True).get("text", "")
-    proj = config.load_projects()[i]
-    proj.message_file.parent.mkdir(exist_ok=True)
-    proj.message_file.write_text(text, encoding="utf-8")
+    try:
+        db.update_project(project_id, {"message_text": text})
+    except db.DBError as e:
+        return jsonify({"error": str(e)}), 404
     return jsonify({"ok": True})
 
 
-@app.get("/api/projects/<int:i>/status")
-def project_status(i):
-    if not _valid_index(i):
+def _settings():
+    s = db.get_settings()
+    return s.get("timezone", "America/Sao_Paulo"), s.get("date_format", "%Y%m%d")
+
+
+@app.get("/api/projects/<project_id>/status")
+def project_status(project_id):
+    row = db.get_project(project_id)
+    if not row:
         return jsonify({"error": "projeto inexistente"}), 404
     if not config.credentials_ok():
-        return jsonify({"error": "credencial do Google nao encontrada"}), 400
-    drive = Drive(config.google_credentials_file())
-    state = State(config.STATE_FILE, config.timezone())
+        return jsonify({"error": "credencial do Google não encontrada"}), 400
+    timezone, date_format = _settings()
+    project = config.Project(row, timezone)
+    drive = Drive(config.google_credentials())
     date = request.args.get("date") or None
-    return jsonify(checker.project_status(config.load_projects()[i], drive, state, date))
+    return jsonify(checker.project_status(project, drive, timezone, date_format, date))
 
 
-@app.post("/api/projects/<int:i>/test")
-def test_send(i):
-    if not _valid_index(i):
+@app.post("/api/projects/<project_id>/test")
+def test_send(project_id):
+    row = db.get_project(project_id)
+    if not row:
         return jsonify({"error": "projeto inexistente"}), 404
-    proj = config.load_projects()[i]
-    if proj.channel_id <= 0:
+    timezone, date_format = _settings()
+    project = config.Project(row, timezone)
+    if project.channel_id <= 0:
         return jsonify({"error": "defina o canal do Discord primeiro"}), 400
-    sample = proj.read_message().format(
-        project=proj.name, video="EXEMPLO", path="VIRAL / EXEMPLO",
-        date=Drive(config.google_credentials_file()).today_folder_name(
-            config.timezone(), config.date_format()) if config.credentials_ok() else "20260714",
-        link="https://drive.google.com/drive/folders/EXEMPLO",
+    date_name = date_format
+    try:
+        if config.credentials_ok():
+            date_name = Drive(config.google_credentials()).today_folder_name(timezone, date_format)
+    except Exception:
+        pass
+    sample = project.read_message().format(
+        project=project.name, video="EXEMPLO", path="VIRAL / EXEMPLO",
+        date=date_name, link="https://drive.google.com/drive/folders/EXEMPLO",
     )
     try:
-        _discord().send_message(proj.channel_id, "🧪 **[TESTE]**\n" + sample)
+        _discord().send_message(project.channel_id, "🧪 **[TESTE]**\n" + sample)
         return jsonify({"ok": True})
     except DiscordError as e:
         return jsonify({"error": str(e)}), 400
 
 
-# ===================== Historico =====================
+# ===================== Bot / e-mail do robô =====================
+@app.get("/api/bot-email")
+def bot_email():
+    try:
+        creds = config.google_credentials()
+        if isinstance(creds, dict):
+            return jsonify({"email": creds.get("client_email", "")})
+        import json as _json
+        data = _json.loads(Path(creds).read_text(encoding="utf-8"))
+        return jsonify({"email": data.get("client_email", "")})
+    except Exception as e:  # noqa
+        return jsonify({"email": "", "error": str(e)})
+
+
+# ===================== Histórico =====================
 @app.get("/api/history")
 def history():
-    return jsonify({"history": State(config.STATE_FILE, config.timezone()).history()})
+    return jsonify({"history": db.history()})
 
 
 @app.post("/api/history/forget")
 def forget():
     fid = request.get_json(force=True).get("folder_id", "")
-    ok = State(config.STATE_FILE, config.timezone()).forget(fid)
-    return jsonify({"ok": ok})
+    return jsonify({"ok": db.forget_notified(fid)})
 
 
-# ===================== Runner =====================
+# ===================== "Monitoramento" (liga/desliga o flag global) =====================
 @app.get("/api/runner")
 def runner_status():
+    s = db.get_settings()
     return jsonify({
-        "running": runner.running,
-        "last_run": runner.last_run,
-        "last_error": runner.last_error,
-        "poll_interval": config.poll_interval(),
+        "running": s.get("monitoring_enabled", "true") == "true",
+        "last_run": s.get("last_run_at"),
+        "last_error": s.get("last_run_error") or None,
+        "poll_interval": int(s.get("poll_interval_seconds", 300)),
     })
 
 
 @app.post("/api/runner/start")
 def runner_start():
-    runner.start()
+    db.set_setting("monitoring_enabled", "true")
     return runner_status()
 
 
 @app.post("/api/runner/stop")
 def runner_stop():
-    runner.stop()
+    db.set_setting("monitoring_enabled", "false")
     return jsonify({"running": False})
 
 

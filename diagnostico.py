@@ -1,45 +1,45 @@
-"""Diagnostico: para cada projeto do projects.json, le a pasta MIDIAS e mostra a
-estrutura + status Multicorder. NAO envia nada pro Discord. So leitura.
+"""Diagnostico: para cada projeto cadastrado no Supabase, le a pasta MIDIAS e
+mostra a estrutura + status Multicorder. NAO envia nada pro Discord. So leitura.
 
 Uso:
   python diagnostico.py            -> usa a data de hoje
   python diagnostico.py 20260714   -> forca uma data especifica
 """
-import json
 import sys
-from pathlib import Path
 
+import config
+import db
 from drive import Drive
-
-BASE = Path(__file__).resolve().parent
-CREDS = str(BASE / "credentials/service_account.json")
 
 date_override = sys.argv[1] if len(sys.argv) > 1 else None
 
-projects = json.loads((BASE / "projects.json").read_text(encoding="utf-8"))["projects"]
-d = Drive(CREDS)
+settings = db.get_settings()
+timezone = settings.get("timezone", "America/Sao_Paulo")
+date_format = settings.get("date_format", "%Y%m%d")
 
-for proj in projects:
-    name = proj["name"]
-    folder_id = str(proj["midias_folder_id"])
-    required = set(int(n) for n in proj["required_indices"])
+d = Drive(config.google_credentials())
+
+for row in db.list_projects():
+    name = row["name"]
+    folder_id = str(row.get("midias_folder_id") or "")
+    required = set(int(n) for n in (row.get("required_indices") or []))
     print("=" * 60)
     print(f"PROJETO: {name}")
-    print(f"  indices exigidos: {sorted(required)}")
+    print(f"  índices exigidos: {sorted(required)}")
 
-    if folder_id.startswith("cole_") or not folder_id:
-        print("  (pasta ainda nao configurada)")
+    if not folder_id:
+        print("  (pasta ainda não configurada)")
         continue
 
     if date_override:
         date_name = date_override
         date_folder = d._find_child_folder_by_name(folder_id, date_name)
     else:
-        date_folder, date_name = d.get_today_folder(folder_id, "America/Sao_Paulo", "%Y%m%d")
+        date_folder, date_name = d.get_today_folder(folder_id, timezone, date_format)
 
     print(f"  data procurada: {date_name}")
     if not date_folder:
-        print("  !! pasta da data NAO encontrada.")
+        print("  !! pasta da data NÃO encontrada.")
         continue
 
     rows = d.walk_recording_folders(date_folder["id"])
@@ -52,9 +52,10 @@ for proj in projects:
         complete = d.is_complete(r["numbers"], required)
         falta = sorted(required - r["numbers"])
         status = "COMPLETO ✅" if complete else f"faltando {falta}"
-        print(f"    {r['path']:<28} tem=[{nums:<11}] -> {status}")
+        notified = " (já avisado)" if db.is_notified(r["id"]) else ""
+        print(f"    {r['path']:<28} tem=[{nums:<11}] -> {status}{notified}")
 
-    completas = [r for r in rows if d.is_complete(r["numbers"], required)]
-    print(f"  >> {len(completas)} pasta(s) disparariam mensagem:")
+    completas = [r for r in rows if d.is_complete(r["numbers"], required) and not db.is_notified(r["id"])]
+    print(f"  >> {len(completas)} pasta(s) disparariam mensagem agora:")
     for r in completas:
         print(f"       - {r['path']}")
