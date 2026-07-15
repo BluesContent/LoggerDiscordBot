@@ -9,7 +9,8 @@ exigidos**, ele envia uma mensagem pré-definida (com @ marcações) num canal d
 - Ignora arquivos que não são gravação (ex: o sidecar `MultiCorder - ....xml`).
 - Não repete: cada pasta é avisada **uma única vez**.
 - **Multi-projeto**: um só bot atende vários projetos, cada um com sua pasta, seus
-  índices exigidos, seu canal e sua mensagem — tudo em `projects.json`, sem mexer no código.
+  índices exigidos, seu canal e sua mensagem — tudo editável pelo **painel web**.
+- Roda **100% local**, sem depender de nenhum serviço externo pago.
 
 ---
 
@@ -27,86 +28,8 @@ MIDIAS/                    ← você informa o ID dela (por projeto)
         └── CONVIDADO-B/
 ```
 
-> **Índices exigidos:** neste projeto o conjunto completo é `1, 2, 3, 5, 6` (o **4 é
-> pulado** por causa das entradas do vMix). Isso é configurável por projeto.
-
----
-
-## ⚙️ Como configurar
-
-A configuração é dividida em dois arquivos — **nenhum dos dois vai para o repositório**
-(ambos estão no `.gitignore`, junto com a pasta `messages/`, pois carregam dados
-específicos do seu servidor/projeto):
-
-- **`.env`** → segredos e globais (token do bot, credencial Google, intervalo, fuso).
-  Copie de `.env.example`.
-- **`projects.json`** → a lista de projetos vigiados. Copie de `projects.example.json`:
-  ```bash
-  cp projects.example.json projects.json
-  ```
-
-### `.env` (copie de `.env.example`)
-```env
-DISCORD_TOKEN=...             # token do bot
-GOOGLE_CREDENTIALS_FILE=credentials/service_account.json
-POLL_INTERVAL_SECONDS=300     # checa a cada 5 min
-TIMEZONE=America/Sao_Paulo
-DATE_FORMAT=%Y%m%d
-```
-
-### `projects.json`
-```json
-{
-  "projects": [
-    {
-      "name": "Projeto Principal",
-      "midias_folder_id": "ID_DA_PASTA_MIDIAS",
-      "required_indices": [1, 2, 3, 5, 6],
-      "discord_channel_id": 123456789012345678,
-      "message_file": "messages/projeto_principal.txt",
-      "active_days": "ter",
-      "active_start": "14:00",
-      "active_end": "17:00"
-    }
-  ]
-}
-```
-
-| Campo | O que é |
-|---|---|
-| `name` | Nome do projeto (só pra log/mensagem) |
-| `midias_folder_id` | ID da pasta MIDIAS no Drive (parte da URL após `/folders/`) |
-| `required_indices` | Quais números `Multicorder` fazem o "completo" |
-| `discord_channel_id` | ID do canal onde a mensagem vai |
-| `message_file` | Arquivo com o texto da mensagem |
-| `active_days` | Dias ativos: `seg,ter,qua,qui,sex,sab,dom` (vazio = todos) |
-| `active_start` / `active_end` | Faixa de horário `HH:MM` (vazio = sem limite) |
-
-**Para adicionar outro projeto:** basta acrescentar outro objeto na lista `projects`
-(com outra pasta, outros índices, outro canal e outra mensagem). Nenhuma mudança de código.
-
-### Mensagem (`messages/*.txt`)
-A pasta `messages/` é criada automaticamente (pelo painel ou na primeira execução) e
-**não vai para o repositório** — o texto de cada projeto fica só na sua máquina. Exemplo
-de conteúdo:
-
-```
-🎬 **Gravação finalizada!**
-
-<@&ID_DO_CARGO>, a pasta **{path}** ({date}) já está com todos os arquivos no Drive.
-
-📁 {link}
-```
-
-Placeholders disponíveis:
-- `{path}` → caminho da pasta (ex: `VIRAL / CONVIDADO-A`)
-- `{video}` → só o nome final da pasta (ex: `CONVIDADO-A`)
-- `{date}` → data (ex: `20260714`)
-- `{link}` → link direto pra pasta no Drive
-- `{project}` → nome do projeto
-
-Marcações (@): use os IDs — cargo `<@&ID_DO_CARGO>`, usuário `<@ID_DO_USUARIO>`
-(Modo Desenvolvedor ligado → botão direito → Copiar ID).
+> **Índices exigidos:** por padrão o conjunto completo é `1, 2, 3, 4, 5, 6`, mas isso é
+> configurável por projeto (ex: pulando o 4, se for o caso do seu setup de câmeras).
 
 ---
 
@@ -120,21 +43,33 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### Google Cloud (feito ✔️)
-Conta de serviço criada, `credentials/service_account.json` no lugar e pasta MIDIAS
-compartilhada com o e-mail do robô (permissão Leitor).
+### Google Cloud
+1. Crie uma **Conta de Serviço** no [Google Cloud Console](https://console.cloud.google.com/)
+   com a **Google Drive API** ativada.
+2. Baixe a chave JSON e salve como `credentials/service_account.json`.
+3. **Compartilhe a pasta MIDIAS** (no Drive) com o e-mail da conta de serviço
+   (permissão de Leitor). O painel mostra esse e-mail com botão de copiar.
 
 ### Discord
 1. <https://discord.com/developers/applications> → **New Application**.
-2. **Bot** → **Reset Token** → copie pro `.env` (`DISCORD_TOKEN`).
+2. **Bot** → **Reset Token** → copie (vai no `.env`).
 3. **OAuth2 → URL Generator**: marque scope **`bot`** e permissões **Send Messages** +
-   **View Channel** → abra a URL → adicione ao seu servidor.
-4. No app do Discord: **Configurações → Avançado → Modo Desenvolvedor** ligado →
-   botão direito no canal → **Copiar ID do canal** → cole em `discord_channel_id`.
+   **View Channel** → abra a URL gerada → adicione ao seu servidor.
+4. Ative o **Modo Desenvolvedor** no Discord (Configurações → Avançado) — útil se quiser
+   pegar IDs manualmente (o painel já faz isso por você na maioria dos casos).
+
+### `.env` (copie de `.env.example`)
+```env
+DISCORD_TOKEN=...
+GOOGLE_CREDENTIALS_FILE=credentials/service_account.json
+```
+Apenas segredos ficam aqui. Todo o resto (projetos, mensagens, agenda, intervalo de
+checagem) é configurado pelo painel e fica guardado em `data/` (criado automaticamente,
+nunca vai para o repositório).
 
 ---
 
-## 🖥️ Painel web (jeito recomendado)
+## 🖥️ Painel web (como usar no dia a dia)
 
 Você administra tudo por um painel no navegador — **sem editar arquivos**.
 
@@ -144,15 +79,16 @@ Você administra tudo por um painel no navegador — **sem editar arquivos**.
 
 No painel você pode:
 - ➕ Criar/editar/excluir **projetos** (pasta do Drive, índices, canal, agenda)
-- ✍️ Editar a **mensagem** e inserir **@menções** clicando nos cargos/@everyone
+- ✍️ Editar a **mensagem** com um editor visual e inserir **@menções** clicando nos
+  cargos/@everyone (sem precisar saber IDs)
 - 🔎 Ver o **status ao vivo** de cada pasta (completo / faltando / já avisado)
 - 🧪 **Testar envio** no canal
-- ▶️ **Ligar/Desligar** o monitoramento (enquanto o painel estiver aberto)
+- ▶️ **Ligar/Desligar** o monitoramento
 - 🗓️ Ver o **histórico** e liberar reenvio de uma pasta
-- 🔑 Trocar o **token** e ajustes gerais na aba **Configurações**
+- 🔑 Ajustar intervalo de checagem, fuso horário etc. na aba **Configurações**
 
-> ⚠️ O monitoramento roda enquanto a janela do painel (Terminal) estiver aberta.
-> Para rodar 24/7 sem depender disso, é a etapa da **Vercel**.
+> ⚠️ O monitoramento roda enquanto o painel (ou `bot.py`) estiver aberto no seu
+> computador. Se o Mac desligar ou o programa fechar, o bot para.
 
 ---
 
@@ -166,7 +102,7 @@ python diagnostico.py 20260714   # força uma data
 Mostra, por projeto, quais pastas estão completas e quais disparariam mensagem — **sem
 tocar no Discord**. Ótimo pra validar antes de ligar o bot de verdade.
 
-## ▶️ Rodar o bot
+## ▶️ Rodar o bot em loop (sem abrir o painel)
 
 ```bash
 source .venv/bin/activate
@@ -176,9 +112,12 @@ python bot.py
 ---
 
 ## 🔒 Segurança
-`DISCORD_TOKEN` e `service_account.json` são secretos e já estão no `.gitignore`.
+`DISCORD_TOKEN` e `credentials/service_account.json` são secretos e já estão no
+`.gitignore`. A pasta `data/` (projetos, mensagens, histórico reais) também não vai
+para o repositório.
 
-## ☁️ Sobre a Vercel
-A Vercel é serverless (não roda 24/7). A versão para lá será uma **Cron Function** que
-faz uma verificação por vez e envia via API do Discord. As credenciais são as mesmas;
-o código será adaptado quando chegarmos nessa etapa.
+## ☁️ Rodar na nuvem (pausado por enquanto)
+O código já tem uma base pronta para rodar 24/7 na Vercel + Supabase (arquivos em
+`api/`, `vercel.json`, `.github/workflows/check.yml`), mas essa etapa está **pausada**
+— o bot está rodando local por enquanto. Quando quiser retomar, é só reativar o
+agendamento no workflow do GitHub e configurar as variáveis de ambiente na Vercel.

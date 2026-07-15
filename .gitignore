@@ -1,5 +1,6 @@
 .env
 credentials/
+data/
 state.json
 projects.json
 messages/

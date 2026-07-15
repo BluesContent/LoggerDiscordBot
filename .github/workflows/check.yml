@@ -1,8 +1,10 @@
 name: Checar Drive e avisar no Discord
 
 on:
-  schedule:
-    - cron: "*/5 * * * *"
+  # Agendamento automatico PAUSADO por enquanto (o bot esta rodando local).
+  # Para retomar na nuvem, descomente as duas linhas abaixo.
+  # schedule:
+  #   - cron: "*/5 * * * *"
   workflow_dispatch: {}
 
 jobs:

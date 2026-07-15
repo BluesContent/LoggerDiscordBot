@@ -1,6 +1,7 @@
-"""Configuracoes globais. Le do .env localmente e das variaveis de ambiente na Vercel.
-A configuracao dos PROJETOS (pasta, canal, mensagem, agenda) vive no Supabase (db.py),
-nao mais em arquivos locais - assim funciona igual local e na nuvem."""
+"""Configuracoes globais, lidas do .env. A configuracao dos PROJETOS (pasta, canal,
+mensagem, agenda) e o historico vivem em arquivos locais (data/, via db.py) —
+essa mesma interface poderia futuramente ser trocada por um banco na nuvem
+(Supabase) sem precisar mudar checker.py/webapp/bot.py/diagnostico.py."""
 from __future__ import annotations
 
 import os
@@ -20,15 +21,13 @@ def env(key: str, default: str = "") -> str:
 
 # ----- Segredos / globais -----
 DISCORD_TOKEN = env("DISCORD_TOKEN")
-SUPABASE_URL = env("SUPABASE_URL")
-SUPABASE_SERVICE_ROLE_KEY = env("SUPABASE_SERVICE_ROLE_KEY")
 
-# Credencial do Google: em produção (Vercel) vem como o JSON inteiro numa env var
-# (não dá para gravar arquivo). Localmente também aceitamos um arquivo em disco.
+# Credencial do Google. Localmente, um arquivo em disco. Se um dia isso for pra
+# nuvem (onde nao da pra gravar arquivo), aceita o JSON inteiro numa env var.
 GOOGLE_SERVICE_ACCOUNT_JSON = env("GOOGLE_SERVICE_ACCOUNT_JSON")
 GOOGLE_CREDENTIALS_FILE = str(BASE_DIR / env("GOOGLE_CREDENTIALS_FILE", "credentials/service_account.json"))
 
-# Protege o painel web (login simples) e o endpoint de checagem (chamado pelo GitHub Actions)
+# Senha opcional do painel web (deixe em branco para não pedir login — ok para uso local).
 PANEL_PASSWORD = env("PANEL_PASSWORD")
 CRON_SECRET = env("CRON_SECRET")
 
